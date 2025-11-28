@@ -11,7 +11,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/vantutran2k1/flowfleet/internal/adapter/handler"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/logger"
+	"github.com/vantutran2k1/flowfleet/internal/adapter/storage/postgres"
 	"github.com/vantutran2k1/flowfleet/internal/config"
 	"go.uber.org/zap"
 )
@@ -36,13 +38,14 @@ func main() {
 	}
 	defer pool.Close()
 
-	// store := postgres.New(pool)
-
 	if err := pool.Ping(context.Background()); err != nil {
 		appLogger.Fatal("cannot connect to db", zap.Error(err))
 	}
 
 	appLogger.Info("connected to database via pgxpool")
+
+	store := postgres.New(pool)
+	driverHandler := handler.NewDriverHandler(store)
 
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -50,6 +53,11 @@ func main() {
 	r.GET("/health", func(ctx *gin.Context) {
 		ctx.JSON(200, gin.H{"status": "UP", "env": cfg.Env})
 	})
+
+	api := r.Group("/api/v1")
+	{
+		api.POST("/drivers", driverHandler.CreateDriver)
+	}
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.ServerPort,
