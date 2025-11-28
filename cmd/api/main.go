@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/logger"
 	"github.com/vantutran2k1/flowfleet/internal/config"
 	"go.uber.org/zap"
@@ -23,6 +24,25 @@ func main() {
 
 	appLogger, _ := logger.New()
 	defer appLogger.Sync()
+
+	dbConfig, err := pgxpool.ParseConfig(cfg.DBUrl)
+	if err != nil {
+		appLogger.Fatal("unable to parse db config", zap.Error(err))
+	}
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), dbConfig)
+	if err != nil {
+		appLogger.Fatal("unable to create db pool", zap.Error(err))
+	}
+	defer pool.Close()
+
+	// store := postgres.New(pool)
+
+	if err := pool.Ping(context.Background()); err != nil {
+		appLogger.Fatal("cannot connect to db", zap.Error(err))
+	}
+
+	appLogger.Info("connected to database via pgxpool")
 
 	r := gin.New()
 	r.Use(gin.Recovery())

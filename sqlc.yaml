@@ -1,0 +1,15 @@
+version: "2"
+sql:
+  - schema: "migrations"
+    queries: "internal/adapter/storage/postgres/queries"
+    engine: "postgresql"
+    gen:
+      go:
+        package: "postgres"
+        out: "internal/adapter/storage/postgres"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "uuid"
+            go_type: "github.com/google/uuid.UUID"
