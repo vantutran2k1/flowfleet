@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgis/postgis:15-3.3-alpine
+    container_name: flowfleet_db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: flowfleet
+      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_DB: flowfleet_core
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: flowfleet_redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
