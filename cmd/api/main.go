@@ -11,9 +11,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/handler"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/logger"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/storage/postgres"
+	"github.com/vantutran2k1/flowfleet/internal/adapter/websocket"
 	"github.com/vantutran2k1/flowfleet/internal/config"
 	"go.uber.org/zap"
 )
@@ -26,6 +28,16 @@ func main() {
 
 	appLogger, _ := logger.New()
 	defer appLogger.Sync()
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		appLogger.Fatal("failed to connect to redis", zap.Error(err))
+	}
+
+	hub := websocket.NewHub(rdb)
+	go hub.Run()
 
 	dbConfig, err := pgxpool.ParseConfig(cfg.DBUrl)
 	if err != nil {
@@ -41,7 +53,6 @@ func main() {
 	if err := pool.Ping(context.Background()); err != nil {
 		appLogger.Fatal("cannot connect to db", zap.Error(err))
 	}
-
 	appLogger.Info("connected to database via pgxpool")
 
 	store := postgres.New(pool)
@@ -57,6 +68,10 @@ func main() {
 	api := r.Group("/api/v1")
 	{
 		api.POST("/drivers", driverHandler.CreateDriver)
+
+		api.GET("/ws", func(c *gin.Context) {
+			websocket.ServeWs(hub, c)
+		})
 	}
 
 	srv := &http.Server{
