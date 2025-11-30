@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 
 	"github.com/redis/go-redis/v9"
@@ -52,6 +53,17 @@ func (h *Hub) Run() {
 			}
 
 			log.Printf("live tracking: driver %s is at [%f, %f]", message.DriverID, message.Lat, message.Lng)
+		}
+	}
+}
+
+func (h *Hub) SendToDriver(driverID string, message any) {
+	// TODO: use map[driverID]*Client here for quick lookup
+	for client := range h.clients {
+		if client.driverID == driverID {
+			msgBytes, _ := json.Marshal(message)
+			client.send <- msgBytes
+			return
 		}
 	}
 }

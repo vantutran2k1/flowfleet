@@ -15,8 +15,10 @@ import (
 	"github.com/vantutran2k1/flowfleet/internal/adapter/handler"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/logger"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/storage/postgres"
+	redis_adaptor "github.com/vantutran2k1/flowfleet/internal/adapter/storage/redis"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/websocket"
 	"github.com/vantutran2k1/flowfleet/internal/config"
+	"github.com/vantutran2k1/flowfleet/internal/core/service"
 	"go.uber.org/zap"
 )
 
@@ -58,6 +60,10 @@ func main() {
 	store := postgres.New(pool)
 	driverHandler := handler.NewDriverHandler(store)
 
+	geoStore := redis_adaptor.NewGeoStore(rdb)
+	dispatchService := service.NewDispatchService(pool, geoStore, hub)
+	orderHandler := handler.NewOrderHandler(dispatchService)
+
 	r := gin.New()
 	r.Use(gin.Recovery())
 
@@ -68,6 +74,7 @@ func main() {
 	api := r.Group("/api/v1")
 	{
 		api.POST("/drivers", driverHandler.CreateDriver)
+		api.POST("/orders", orderHandler.CreateOrder)
 
 		api.GET("/ws", func(c *gin.Context) {
 			websocket.ServeWs(hub, c)
