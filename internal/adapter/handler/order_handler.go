@@ -25,10 +25,6 @@ type CreateOrderRequest struct {
 	PickupLng float64 `json:"pickup_lng" binding:"required"`
 }
 
-type UpdateOrderStatusRequest struct {
-	DriverID string `json:"driver_id" binding:"required,uuid"`
-}
-
 func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	var req CreateOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -67,12 +63,12 @@ func (h *OrderHandler) handleTransition(c *gin.Context, fn func(context.Context,
 		return
 	}
 
-	var req UpdateOrderStatusRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+	driverIDInterface, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
 		return
 	}
-	driverUUID, _ := uuid.Parse(req.DriverID)
+	driverUUID := driverIDInterface.(uuid.UUID)
 
 	if err := fn(c.Request.Context(), driverUUID, orderUUID); err != nil {
 		if errors.Is(err, domain.ErrInvalidTransition) {

@@ -111,6 +111,8 @@ type Driver struct {
 	CurrentLocation interface{}
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	Email           string
+	PasswordHash    string
 }
 
 type Fleet struct {

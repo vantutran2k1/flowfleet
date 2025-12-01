@@ -123,6 +123,31 @@ func (q *Queries) GetDriver(ctx context.Context, id uuid.UUID) (GetDriverRow, er
 	return i, err
 }
 
+const getDriverByEmail = `-- name: GetDriverByEmail :one
+SELECT id, password_hash, name, status
+FROM drivers
+WHERE email = $1 LIMIT 1
+`
+
+type GetDriverByEmailRow struct {
+	ID           uuid.UUID
+	PasswordHash string
+	Name         string
+	Status       DriverStatus
+}
+
+func (q *Queries) GetDriverByEmail(ctx context.Context, email string) (GetDriverByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getDriverByEmail, email)
+	var i GetDriverByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.PasswordHash,
+		&i.Name,
+		&i.Status,
+	)
+	return i, err
+}
+
 const listDriversByFleet = `-- name: ListDriversByFleet :many
 SELECT id, name, phone, status
 FROM drivers

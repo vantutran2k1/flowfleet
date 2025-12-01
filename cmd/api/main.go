@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -66,6 +67,9 @@ func main() {
 
 	orderHandler := handler.NewOrderHandler(dispatchService)
 
+	authService := service.NewAuthService()
+	authHandler := handler.NewAuthHandler(authService, pool)
+
 	r := gin.New()
 	r.Use(gin.Recovery())
 
@@ -75,15 +79,21 @@ func main() {
 
 	api := r.Group("/api/v1")
 	{
-		api.POST("/drivers", driverHandler.CreateDriver)
-		api.POST("/orders", orderHandler.CreateOrder)
-		api.POST("/orders/:id/arrive", orderHandler.ArriveAtPickup)
-		api.POST("/orders/:id/pickup", orderHandler.PickUpOrder)
-		api.POST("/orders/:id/deliver", orderHandler.CompleteOrder)
+		api.POST("/login", authHandler.Login)
 
-		api.GET("/ws", func(c *gin.Context) {
-			websocket.ServeWs(hub, c)
-		})
+		protected := api.Group("/")
+		protected.Use(handler.AuthMiddleware(authService))
+		{
+			api.POST("/drivers", driverHandler.CreateDriver)
+			api.POST("/orders", orderHandler.CreateOrder)
+			api.POST("/orders/:id/arrive", orderHandler.ArriveAtPickup)
+			api.POST("/orders/:id/pickup", orderHandler.PickUpOrder)
+			api.POST("/orders/:id/deliver", orderHandler.CompleteOrder)
+
+			api.GET("/ws", func(c *gin.Context) {
+				websocket.ServeWs(hub, c)
+			})
+		}
 	}
 
 	srv := &http.Server{
@@ -93,7 +103,7 @@ func main() {
 
 	go func() {
 		appLogger.Info("starting server", zap.String("port", cfg.ServerPort))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			appLogger.Fatal("listen: %s\n", zap.Error(err))
 		}
 	}()

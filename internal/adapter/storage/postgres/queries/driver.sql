@@ -22,3 +22,8 @@ WHERE fleet_id = $1
   AND status = 'idle'
 ORDER BY current_location <-> ST_SetSRID(ST_MakePoint($2, $3), 4326)
 LIMIT 10;
+
+-- name: GetDriverByEmail :one
+SELECT id, password_hash, name, status
+FROM drivers
+WHERE email = $1 LIMIT 1;
