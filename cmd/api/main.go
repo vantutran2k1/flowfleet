@@ -38,7 +38,7 @@ func main() {
 		appLogger.Fatal("failed to connect to redis", zap.Error(err))
 	}
 
-	hub := websocket.NewHub(rdb)
+	hub := websocket.NewHub(rdb, nil)
 	go hub.Run()
 
 	dbConfig, err := pgxpool.ParseConfig(cfg.DBUrl)
@@ -62,6 +62,8 @@ func main() {
 
 	geoStore := redis_adaptor.NewGeoStore(rdb)
 	dispatchService := service.NewDispatchService(pool, geoStore, hub)
+	hub.SetService(dispatchService)
+
 	orderHandler := handler.NewOrderHandler(dispatchService)
 
 	r := gin.New()

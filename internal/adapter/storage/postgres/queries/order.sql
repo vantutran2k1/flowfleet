@@ -12,3 +12,15 @@ WHERE id = $2;
 UPDATE drivers
 SET status = $2, updated_at = NOW()
 WHERE id = $1;
+
+-- name: RejectOrderAssignment :exec
+UPDATE orders
+SET driver_id = NULL,
+    status = 'pending',
+    updated_at = NOW()
+WHERE id = $1 AND driver_id = $2 AND status = 'assigned';
+
+-- name: ConfirmOrderAcceptance :exec
+UPDATE drivers
+SET status = 'en_route', updated_at = NOW()
+WHERE id = $1;

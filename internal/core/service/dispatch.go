@@ -106,3 +106,46 @@ func (s *DispatchService) CreateAndDispatchOrder(ctx context.Context, fleetID uu
 
 	return order.ID, nil
 }
+
+func (s *DispatchService) AcceptAssignment(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	qtx := s.repo.WithTx(tx)
+
+	if err := qtx.SetDriverStatus(ctx, postgres.SetDriverStatusParams{
+		ID:     driverID,
+		Status: postgres.DriverStatusEnRoute,
+	}); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (s *DispatchService) RejectAssignment(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	qtx := s.repo.WithTx(tx)
+
+	if err := qtx.RejectOrderAssignment(ctx, postgres.RejectOrderAssignmentParams{
+		ID:       orderID,
+		DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
+	}); err != nil {
+		return err
+	}
+
+	if err := qtx.SetDriverStatus(ctx, postgres.SetDriverStatusParams{
+		ID:     driverID,
+		Status: postgres.DriverStatusIdle,
+	}); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}

@@ -29,6 +29,17 @@ func (q *Queries) AssignDriverToOrder(ctx context.Context, arg AssignDriverToOrd
 	return err
 }
 
+const confirmOrderAcceptance = `-- name: ConfirmOrderAcceptance :exec
+UPDATE drivers
+SET status = 'en_route', updated_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) ConfirmOrderAcceptance(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, confirmOrderAcceptance, id)
+	return err
+}
+
 const createOrder = `-- name: CreateOrder :one
 INSERT INTO orders (fleet_id, amount_cents, status, pickup_location, dropoff_location)
 VALUES ($1, $2, 'pending', ST_SetSRID(ST_MakePoint($3, $4), 4326), ST_SetSRID(ST_MakePoint($5, $6), 4326))
@@ -61,6 +72,24 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Creat
 	var i CreateOrderRow
 	err := row.Scan(&i.ID, &i.CreatedAt)
 	return i, err
+}
+
+const rejectOrderAssignment = `-- name: RejectOrderAssignment :exec
+UPDATE orders
+SET driver_id = NULL,
+    status = 'pending',
+    updated_at = NOW()
+WHERE id = $1 AND driver_id = $2 AND status = 'assigned'
+`
+
+type RejectOrderAssignmentParams struct {
+	ID       uuid.UUID
+	DriverID pgtype.UUID
+}
+
+func (q *Queries) RejectOrderAssignment(ctx context.Context, arg RejectOrderAssignmentParams) error {
+	_, err := q.db.Exec(ctx, rejectOrderAssignment, arg.ID, arg.DriverID)
+	return err
 }
 
 const setDriverStatus = `-- name: SetDriverStatus :exec

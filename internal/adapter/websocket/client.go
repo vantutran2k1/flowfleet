@@ -36,7 +36,7 @@ func (c *Client) readPump() {
 		c.conn.Close()
 	}()
 
-	c.conn.SetReadLimit(512)
+	c.conn.SetReadLimit(1024)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(appData string) error {
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -44,16 +44,15 @@ func (c *Client) readPump() {
 	})
 
 	for {
-		var telemetry TelemetryData
-		if err := c.conn.ReadJSON(&telemetry); err != nil {
+		_, message, err := c.conn.ReadMessage()
+		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("error: %v", err)
 			}
 			break
 		}
 
-		telemetry.DriverID = c.driverID
-		c.hub.broadcast <- telemetry
+		c.hub.HandleMessage(c, message)
 	}
 }
 
