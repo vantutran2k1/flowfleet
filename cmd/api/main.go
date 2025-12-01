@@ -77,6 +77,9 @@ func main() {
 	{
 		api.POST("/drivers", driverHandler.CreateDriver)
 		api.POST("/orders", orderHandler.CreateOrder)
+		api.POST("/orders/:id/arrive", orderHandler.ArriveAtPickup)
+		api.POST("/orders/:id/pickup", orderHandler.PickUpOrder)
+		api.POST("/orders/:id/deliver", orderHandler.CompleteOrder)
 
 		api.GET("/ws", func(c *gin.Context) {
 			websocket.ServeWs(hub, c)

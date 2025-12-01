@@ -11,6 +11,7 @@ import (
 	"github.com/vantutran2k1/flowfleet/internal/adapter/storage/postgres"
 	redis_adapter "github.com/vantutran2k1/flowfleet/internal/adapter/storage/redis"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/websocket"
+	"github.com/vantutran2k1/flowfleet/internal/core/domain"
 )
 
 type DispatchService struct {
@@ -144,6 +145,66 @@ func (s *DispatchService) RejectAssignment(ctx context.Context, driverID uuid.UU
 		ID:     driverID,
 		Status: postgres.DriverStatusIdle,
 	}); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (s *DispatchService) ArriveAtPickup(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) error {
+	rows, err := s.repo.MarkOrderArrived(ctx, postgres.MarkOrderArrivedParams{
+		ID:       orderID,
+		DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrInvalidTransition
+	}
+
+	return nil
+}
+
+func (s *DispatchService) PickUpOrder(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) error {
+	rows, err := s.repo.MarkOrderPickedUp(ctx, postgres.MarkOrderPickedUpParams{
+		ID:       orderID,
+		DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrInvalidTransition
+	}
+
+	return nil
+}
+
+func (s *DispatchService) CompleteOrder(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	qtx := s.repo.WithTx(tx)
+
+	rows, err := qtx.MarkOrderDelivered(ctx, postgres.MarkOrderDeliveredParams{
+		ID:       orderID,
+		DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrInvalidTransition
+	}
+
+	err = qtx.SetDriverStatus(ctx, postgres.SetDriverStatusParams{
+		ID:     driverID,
+		Status: postgres.DriverStatusIdle,
+	})
+	if err != nil {
 		return err
 	}
 

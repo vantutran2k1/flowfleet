@@ -24,3 +24,18 @@ WHERE id = $1 AND driver_id = $2 AND status = 'assigned';
 UPDATE drivers
 SET status = 'en_route', updated_at = NOW()
 WHERE id = $1;
+
+-- name: MarkOrderArrived :execrows
+UPDATE orders
+SET status = 'arrived', updated_at = NOW()
+WHERE id = $1 AND driver_id = $2 AND status = 'assigned';
+
+-- name: MarkOrderPickedUp :execrows
+UPDATE orders
+SET status = 'picked_up', updated_at = NOW()
+WHERE id = $1 AND driver_id = $2 AND status = 'arrived';
+
+-- name: MarkOrderDelivered :execrows
+UPDATE orders
+SET status = 'delivered', updated_at = NOW()
+WHERE id = $1 AND driver_id = $2 AND status = 'picked_up';

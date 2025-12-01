@@ -74,6 +74,63 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Creat
 	return i, err
 }
 
+const markOrderArrived = `-- name: MarkOrderArrived :execrows
+UPDATE orders
+SET status = 'arrived', updated_at = NOW()
+WHERE id = $1 AND driver_id = $2 AND status = 'assigned'
+`
+
+type MarkOrderArrivedParams struct {
+	ID       uuid.UUID
+	DriverID pgtype.UUID
+}
+
+func (q *Queries) MarkOrderArrived(ctx context.Context, arg MarkOrderArrivedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markOrderArrived, arg.ID, arg.DriverID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markOrderDelivered = `-- name: MarkOrderDelivered :execrows
+UPDATE orders
+SET status = 'delivered', updated_at = NOW()
+WHERE id = $1 AND driver_id = $2 AND status = 'picked_up'
+`
+
+type MarkOrderDeliveredParams struct {
+	ID       uuid.UUID
+	DriverID pgtype.UUID
+}
+
+func (q *Queries) MarkOrderDelivered(ctx context.Context, arg MarkOrderDeliveredParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markOrderDelivered, arg.ID, arg.DriverID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markOrderPickedUp = `-- name: MarkOrderPickedUp :execrows
+UPDATE orders
+SET status = 'picked_up', updated_at = NOW()
+WHERE id = $1 AND driver_id = $2 AND status = 'arrived'
+`
+
+type MarkOrderPickedUpParams struct {
+	ID       uuid.UUID
+	DriverID pgtype.UUID
+}
+
+func (q *Queries) MarkOrderPickedUp(ctx context.Context, arg MarkOrderPickedUpParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markOrderPickedUp, arg.ID, arg.DriverID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const rejectOrderAssignment = `-- name: RejectOrderAssignment :exec
 UPDATE orders
 SET driver_id = NULL,
