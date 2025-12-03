@@ -39,9 +39,5 @@ func (s *StandardStrategy) CalculatePrice(ctx context.Context, input domain.Pric
 
 	total := base + variable
 
-	if total < base {
-		total = base
-	}
-
 	return total, nil
 }

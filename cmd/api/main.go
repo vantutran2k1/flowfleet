@@ -58,11 +58,11 @@ func main() {
 	}
 	appLogger.Info("connected to database via pgxpool")
 
-	store := postgres.New(pool)
+	store := postgres.NewStore(pool)
 	driverHandler := handler.NewDriverHandler(store)
 
 	geoStore := redis_adaptor.NewGeoStore(rdb)
-	dispatchService := service.NewDispatchService(pool, geoStore, hub)
+	dispatchService := service.NewDispatchService(store, geoStore, hub)
 	hub.SetService(dispatchService)
 
 	orderHandler := handler.NewOrderHandler(dispatchService)

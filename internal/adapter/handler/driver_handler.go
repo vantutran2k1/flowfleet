@@ -9,11 +9,11 @@ import (
 )
 
 type DriverHandler struct {
-	repo *postgres.Queries
+	store postgres.Store
 }
 
-func NewDriverHandler(repo *postgres.Queries) *DriverHandler {
-	return &DriverHandler{repo: repo}
+func NewDriverHandler(store postgres.Store) *DriverHandler {
+	return &DriverHandler{store: store}
 }
 
 type CreateDriverRequest struct {
@@ -42,8 +42,17 @@ func (h *DriverHandler) CreateDriver(c *gin.Context) {
 		StMakepoint_2: req.Lat,
 	}
 
-	driver, err := h.repo.CreateDriver(c.Request.Context(), params)
-	if err != nil {
+	var driver postgres.CreateDriverRow
+	if err := h.store.ExecTx(c.Request.Context(), func(q postgres.Querier) error {
+		createdDriver, err := q.CreateDriver(c.Request.Context(), params)
+		if err != nil {
+			return err
+		}
+
+		driver = createdDriver
+
+		return nil
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create driver"})
 		return
 	}

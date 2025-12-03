@@ -9,21 +9,21 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/storage/postgres"
-	redis_adapter "github.com/vantutran2k1/flowfleet/internal/adapter/storage/redis"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/websocket"
 	"github.com/vantutran2k1/flowfleet/internal/core/domain"
+	"github.com/vantutran2k1/flowfleet/internal/core/port"
 	"github.com/vantutran2k1/flowfleet/internal/core/service/pricing"
 	"github.com/vantutran2k1/flowfleet/internal/pkg/geo"
 )
 
 type DispatchService struct {
 	store  postgres.Store
-	geo    *redis_adapter.GeoStore
+	geo    port.GeoFinder
 	hub    *websocket.Hub
 	pricer domain.PricingStrategy
 }
 
-func NewDispatchService(store postgres.Store, geo *redis_adapter.GeoStore, hub *websocket.Hub) *DispatchService {
+func NewDispatchService(store postgres.Store, geo port.GeoFinder, hub *websocket.Hub) *DispatchService {
 	return &DispatchService{
 		store:  store,
 		geo:    geo,
