@@ -8,6 +8,7 @@ sql:
         package: "postgres"
         out: "internal/adapter/storage/postgres"
         sql_package: "pgx/v5"
+        emit_interface: true
         overrides:
           - db_type: "timestamptz"
             go_type: "time.Time"

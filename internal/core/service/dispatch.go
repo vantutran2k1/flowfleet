@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/storage/postgres"
 	redis_adapter "github.com/vantutran2k1/flowfleet/internal/adapter/storage/redis"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/websocket"
@@ -18,17 +17,15 @@ import (
 )
 
 type DispatchService struct {
-	db     *pgxpool.Pool
-	repo   *postgres.Queries
+	store  postgres.Store
 	geo    *redis_adapter.GeoStore
 	hub    *websocket.Hub
 	pricer domain.PricingStrategy
 }
 
-func NewDispatchService(db *pgxpool.Pool, geo *redis_adapter.GeoStore, hub *websocket.Hub) *DispatchService {
+func NewDispatchService(store postgres.Store, geo *redis_adapter.GeoStore, hub *websocket.Hub) *DispatchService {
 	return &DispatchService{
-		db:     db,
-		repo:   postgres.New(db),
+		store:  store,
 		geo:    geo,
 		hub:    hub,
 		pricer: pricing.NewStandardStrategy(),
@@ -56,7 +53,7 @@ func (s *DispatchService) CreateAndDispatchOrder(ctx context.Context, fleetID uu
 		StMakepoint_4: pickupLat,
 	}
 
-	order, err := s.repo.CreateOrder(ctx, params)
+	order, err := s.store.CreateOrder(ctx, params)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -71,7 +68,7 @@ func (s *DispatchService) CreateAndDispatchOrder(ctx context.Context, fleetID uu
 	for _, dID := range candidateIDs {
 		driverUUID, _ := uuid.Parse(dID)
 
-		driver, err := s.repo.GetDriver(ctx, driverUUID)
+		driver, err := s.store.GetDriver(ctx, driverUUID)
 		if err != nil {
 			continue
 		}
@@ -86,31 +83,25 @@ func (s *DispatchService) CreateAndDispatchOrder(ctx context.Context, fleetID uu
 		return order.ID, errors.New("no available drivers found")
 	}
 
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return order.ID, err
-	}
-	defer tx.Rollback(ctx)
+	if err := s.store.ExecTx(ctx, func(q postgres.Querier) error {
+		driverUUID, _ := uuid.Parse(assignedDriverID)
 
-	qtx := s.repo.WithTx(tx)
+		if err := q.SetDriverStatus(ctx, postgres.SetDriverStatusParams{
+			ID:     driverUUID,
+			Status: postgres.DriverStatusEnRoute,
+		}); err != nil {
+			return err
+		}
 
-	driverUUID, _ := uuid.Parse(assignedDriverID)
+		if err := q.AssignDriverToOrder(ctx, postgres.AssignDriverToOrderParams{
+			DriverID: pgtype.UUID{Bytes: driverUUID, Valid: true},
+			ID:       order.ID,
+		}); err != nil {
+			return err
+		}
 
-	if err := qtx.SetDriverStatus(ctx, postgres.SetDriverStatusParams{
-		ID:     driverUUID,
-		Status: postgres.DriverStatusEnRoute,
+		return nil
 	}); err != nil {
-		return order.ID, err
-	}
-
-	if err := qtx.AssignDriverToOrder(ctx, postgres.AssignDriverToOrderParams{
-		DriverID: pgtype.UUID{Bytes: driverUUID, Valid: true},
-		ID:       order.ID,
-	}); err != nil {
-		return order.ID, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
 		return order.ID, err
 	}
 
@@ -125,104 +116,88 @@ func (s *DispatchService) CreateAndDispatchOrder(ctx context.Context, fleetID uu
 }
 
 func (s *DispatchService) AcceptAssignment(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) error {
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	qtx := s.repo.WithTx(tx)
-
-	if err := qtx.SetDriverStatus(ctx, postgres.SetDriverStatusParams{
-		ID:     driverID,
-		Status: postgres.DriverStatusEnRoute,
-	}); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+	return s.store.ExecTx(ctx, func(q postgres.Querier) error {
+		return q.SetDriverStatus(ctx, postgres.SetDriverStatusParams{
+			ID:     driverID,
+			Status: postgres.DriverStatusEnRoute,
+		})
+	})
 }
 
 func (s *DispatchService) RejectAssignment(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) error {
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	qtx := s.repo.WithTx(tx)
+	return s.store.ExecTx(ctx, func(q postgres.Querier) error {
+		if err := q.RejectOrderAssignment(ctx, postgres.RejectOrderAssignmentParams{
+			ID:       orderID,
+			DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
+		}); err != nil {
+			return err
+		}
 
-	if err := qtx.RejectOrderAssignment(ctx, postgres.RejectOrderAssignmentParams{
-		ID:       orderID,
-		DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
-	}); err != nil {
-		return err
-	}
+		if err := q.SetDriverStatus(ctx, postgres.SetDriverStatusParams{
+			ID:     driverID,
+			Status: postgres.DriverStatusIdle,
+		}); err != nil {
+			return err
+		}
 
-	if err := qtx.SetDriverStatus(ctx, postgres.SetDriverStatusParams{
-		ID:     driverID,
-		Status: postgres.DriverStatusIdle,
-	}); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+		return nil
+	})
 }
 
 func (s *DispatchService) ArriveAtPickup(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) error {
-	rows, err := s.repo.MarkOrderArrived(ctx, postgres.MarkOrderArrivedParams{
-		ID:       orderID,
-		DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
-	})
-	if err != nil {
-		return err
-	}
-	if rows == 0 {
-		return domain.ErrInvalidTransition
-	}
+	return s.store.ExecTx(ctx, func(q postgres.Querier) error {
+		rows, err := q.MarkOrderArrived(ctx, postgres.MarkOrderArrivedParams{
+			ID:       orderID,
+			DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return domain.ErrInvalidTransition
+		}
 
-	return nil
+		return nil
+	})
 }
 
 func (s *DispatchService) PickUpOrder(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) error {
-	rows, err := s.repo.MarkOrderPickedUp(ctx, postgres.MarkOrderPickedUpParams{
-		ID:       orderID,
-		DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
-	})
-	if err != nil {
-		return err
-	}
-	if rows == 0 {
-		return domain.ErrInvalidTransition
-	}
+	return s.store.ExecTx(ctx, func(q postgres.Querier) error {
+		rows, err := q.MarkOrderPickedUp(ctx, postgres.MarkOrderPickedUpParams{
+			ID:       orderID,
+			DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return domain.ErrInvalidTransition
+		}
 
-	return nil
+		return nil
+	})
 }
 
 func (s *DispatchService) CompleteOrder(ctx context.Context, driverID uuid.UUID, orderID uuid.UUID) error {
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	qtx := s.repo.WithTx(tx)
+	return s.store.ExecTx(ctx, func(q postgres.Querier) error {
+		rows, err := q.MarkOrderDelivered(ctx, postgres.MarkOrderDeliveredParams{
+			ID:       orderID,
+			DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return domain.ErrInvalidTransition
+		}
 
-	rows, err := qtx.MarkOrderDelivered(ctx, postgres.MarkOrderDeliveredParams{
-		ID:       orderID,
-		DriverID: pgtype.UUID{Bytes: driverID, Valid: true},
+		if err := q.SetDriverStatus(ctx, postgres.SetDriverStatusParams{
+			ID:     driverID,
+			Status: postgres.DriverStatusIdle,
+		}); err != nil {
+			return err
+		}
+
+		return nil
 	})
-	if err != nil {
-		return err
-	}
-	if rows == 0 {
-		return domain.ErrInvalidTransition
-	}
-
-	err = qtx.SetDriverStatus(ctx, postgres.SetDriverStatusParams{
-		ID:     driverID,
-		Status: postgres.DriverStatusIdle,
-	})
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
 }
