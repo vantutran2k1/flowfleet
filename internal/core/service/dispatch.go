@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -12,28 +13,43 @@ import (
 	redis_adapter "github.com/vantutran2k1/flowfleet/internal/adapter/storage/redis"
 	"github.com/vantutran2k1/flowfleet/internal/adapter/websocket"
 	"github.com/vantutran2k1/flowfleet/internal/core/domain"
+	"github.com/vantutran2k1/flowfleet/internal/core/service/pricing"
+	"github.com/vantutran2k1/flowfleet/internal/pkg/geo"
 )
 
 type DispatchService struct {
-	db   *pgxpool.Pool
-	repo *postgres.Queries
-	geo  *redis_adapter.GeoStore
-	hub  *websocket.Hub
+	db     *pgxpool.Pool
+	repo   *postgres.Queries
+	geo    *redis_adapter.GeoStore
+	hub    *websocket.Hub
+	pricer domain.PricingStrategy
 }
 
 func NewDispatchService(db *pgxpool.Pool, geo *redis_adapter.GeoStore, hub *websocket.Hub) *DispatchService {
 	return &DispatchService{
-		db:   db,
-		repo: postgres.New(db),
-		geo:  geo,
-		hub:  hub,
+		db:     db,
+		repo:   postgres.New(db),
+		geo:    geo,
+		hub:    hub,
+		pricer: pricing.NewStandardStrategy(),
 	}
 }
 
-func (s *DispatchService) CreateAndDispatchOrder(ctx context.Context, fleetID uuid.UUID, pickupLat, pickupLng float64) (uuid.UUID, error) {
+func (s *DispatchService) CreateAndDispatchOrder(ctx context.Context, fleetID uuid.UUID, pickupLat, pickupLng, dropoffLat, dropoffLng float64) (uuid.UUID, error) {
+	distMeters := geo.CalculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng)
+
+	priceCents, err := s.pricer.CalculatePrice(ctx, domain.PricingInput{
+		DistanceMeters: distMeters,
+		Vehicle:        domain.VehicleBike,
+		Time:           time.Now(),
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+
 	params := postgres.CreateOrderParams{
 		FleetID:       fleetID,
-		AmountCents:   1500,
+		AmountCents:   int32(priceCents),
 		StMakepoint:   pickupLng,
 		StMakepoint_2: pickupLat,
 		StMakepoint_3: pickupLng,

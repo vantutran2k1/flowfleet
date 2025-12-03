@@ -20,9 +20,11 @@ func NewOrderHandler(svc *service.DispatchService) *OrderHandler {
 }
 
 type CreateOrderRequest struct {
-	FleetID   string  `json:"fleet_id" binding:"required,uuid"`
-	PickupLat float64 `json:"pickup_lat" binding:"required"`
-	PickupLng float64 `json:"pickup_lng" binding:"required"`
+	FleetID    string  `json:"fleet_id" binding:"required,uuid"`
+	PickupLat  float64 `json:"pickup_lat" binding:"required"`
+	PickupLng  float64 `json:"pickup_lng" binding:"required"`
+	DropoffLat float64 `json:"dropoff_lat" binding:"required,latitude"`
+	DropoffLng float64 `json:"dropoff_lng" binding:"required,longitude"`
 }
 
 func (h *OrderHandler) CreateOrder(c *gin.Context) {
@@ -34,7 +36,14 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 
 	fleetUUID, _ := uuid.Parse(req.FleetID)
 
-	orderID, err := h.svc.CreateAndDispatchOrder(c.Request.Context(), fleetUUID, req.PickupLat, req.PickupLng)
+	orderID, err := h.svc.CreateAndDispatchOrder(
+		c.Request.Context(),
+		fleetUUID,
+		req.PickupLat,
+		req.PickupLng,
+		req.DropoffLat,
+		req.DropoffLng,
+	)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
